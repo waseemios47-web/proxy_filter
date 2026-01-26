@@ -55,7 +55,7 @@ st.write(
 
 keyword = st.text_input(
     "Enter game name / keyword",
-    placeholder="e.g. The Secret Garden"
+    placeholder="e.g. Cookingdom"
 )
 
 if st.button("Check Trademark"):
