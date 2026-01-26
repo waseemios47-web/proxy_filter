@@ -2,53 +2,40 @@ import streamlit as st
 import requests
 
 # -----------------------------
-# USPTO Trademark Search
+# USPTO Trademark Search (Working Endpoint)
 # -----------------------------
 def search_trademark(keyword):
-    url = "https://developer.uspto.gov/ibd-api/v1/trademark/application/publications"
+    url = "https://tsdrapi.uspto.gov/ts/cd/casestatus/sn"
+
+    # USPTO does NOT allow text search directly here,
+    # so we use a broader name search endpoint instead
+    search_url = "https://tmsearch.uspto.gov/bin/showfield"
 
     params = {
-        "searchText": keyword,
-        "rows": 20
+        "f": "toc",
+        "p_search": "search",
+        "p_L": 50,
+        "p_s_PARA1": keyword,
+        "p_s_PARA2": "ALL"
     }
 
-    response = requests.get(url, params=params, timeout=15)
+    response = requests.get(search_url, params=params, timeout=15)
     response.raise_for_status()
-    return response.json()
+    return response.text.lower()
 
 
-def analyze_results(data, keyword):
-    results = data.get("results", [])
-    matches = []
+def analyze_results(html_text, keyword):
+    keyword = keyword.lower()
 
-    for item in results:
-        mark = item.get("markIdentification", "")
-        status = item.get("statusCode", "UNKNOWN")
-        owner = item.get("partyName", "Unknown")
-        classes = item.get("internationalClasses", [])
-
-        if keyword.lower() in mark.lower():
-            matches.append({
-                "mark": mark,
-                "status": status,
-                "owner": owner,
-                "classes": classes
-            })
-
-    return matches
+    if keyword in html_text:
+        return True
+    return False
 
 
-def risk_level(matches):
-    for m in matches:
-        if m["status"] == "LIVE":
-            # Class 9 = Games/Software | Class 41 = Entertainment/Games
-            if any(cls in [9, 41] for cls in m["classes"]):
-                return "❌ HIGH RISK — Live trademark exists in Games category"
-
-    if matches:
-        return "⚠ MEDIUM RISK — Similar or inactive trademarks found"
-
-    return "✅ LOW RISK — No relevant trademarks found"
+def risk_level(found):
+    if found:
+        return "❌ HIGH RISK — Trademark with this name likely exists in the US"
+    return "✅ LOW RISK — No obvious trademark found"
 
 
 # -----------------------------
@@ -62,13 +49,13 @@ st.set_page_config(
 
 st.title("🎮 Game Name Trademark Checker (US)")
 st.write(
-    "Check whether a **game name or keyword** is trademarked in the **United States (USPTO)**.\n\n"
-    "**Note:** Single words and names cannot be copyrighted — this tool checks **trademarks only**."
+    "Check whether a **game name or keyword** is already trademarked in the **United States (USPTO)**.\n\n"
+    "**Note:** This is a preliminary screening tool, not legal advice."
 )
 
 keyword = st.text_input(
     "Enter game name / keyword",
-    placeholder="e.g. Cookingdom"
+    placeholder="e.g. The Secret Garden"
 )
 
 if st.button("Check Trademark"):
@@ -77,35 +64,30 @@ if st.button("Check Trademark"):
     else:
         with st.spinner("Searching USPTO trademark database..."):
             try:
-                data = search_trademark(keyword.strip())
-                matches = analyze_results(data, keyword.strip())
-                verdict = risk_level(matches)
+                html = search_trademark(keyword.strip())
+                found = analyze_results(html, keyword.strip())
+                verdict = risk_level(found)
 
                 st.subheader("Result")
-                st.success(verdict) if "LOW" in verdict else st.warning(verdict) if "MEDIUM" in verdict else st.error(verdict)
-
-                if matches:
-                    st.subheader("Trademark Matches")
-                    for m in matches:
-                        st.markdown(
-                            f"""
-                            **Mark Name:** {m['mark']}  
-                            **Status:** {m['status']}  
-                            **Owner:** {m['owner']}  
-                            **Classes:** {', '.join(map(str, m['classes'])) if m['classes'] else 'N/A'}
-                            ---
-                            """
-                        )
+                if "LOW" in verdict:
+                    st.success(verdict)
                 else:
-                    st.info("No trademark records found for this keyword.")
+                    st.error(verdict)
+
+                if found:
+                    st.info(
+                        "A similar trademark name appears in USPTO search results. "
+                        "Manual verification is recommended."
+                    )
+                else:
+                    st.info("No matching trademark name detected.")
 
             except Exception as e:
-                st.error("Something went wrong while checking trademarks.")
+                st.error("USPTO search failed.")
                 st.code(str(e))
-
 
 st.markdown("---")
 st.caption(
     "⚠ This tool provides **preliminary trademark screening only**. "
-    "For legal certainty, consult a trademark attorney."
+    "Always verify manually or consult a trademark attorney."
 )
