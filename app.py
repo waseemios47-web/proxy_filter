@@ -1,93 +1,70 @@
 import streamlit as st
-import requests
 
-# -----------------------------
-# USPTO Trademark Search (Working Endpoint)
-# -----------------------------
-def search_trademark(keyword):
-    url = "https://tsdrapi.uspto.gov/ts/cd/casestatus/sn"
+st.set_page_config(page_title="Proxy Filter Tool", layout="centered")
 
-    # USPTO does NOT allow text search directly here,
-    # so we use a broader name search endpoint instead
-    search_url = "https://tmsearch.uspto.gov/bin/showfield"
+st.title("🔌 Proxy Filter & Export Tool")
+st.write("Upload a TXT file containing mixed proxies. The app will auto-split them into HTTP, SOCKS4, and SOCKS5 files.")
 
-    params = {
-        "f": "toc",
-        "p_search": "search",
-        "p_L": 50,
-        "p_s_PARA1": keyword,
-        "p_s_PARA2": "ALL"
-    }
+uploaded_file = st.file_uploader("Upload proxy TXT file", type=["txt"])
 
-    response = requests.get(search_url, params=params, timeout=15)
-    response.raise_for_status()
-    return response.text.lower()
+def clean_proxy(line):
+    return (
+        line.replace("http://", "")
+            .replace("https://", "")
+            .replace("socks4://", "")
+            .replace("socks5://", "")
+            .strip()
+    )
 
+if uploaded_file:
+    raw_lines = uploaded_file.read().decode("utf-8", errors="ignore").splitlines()
 
-def analyze_results(html_text, keyword):
-    keyword = keyword.lower()
+    http_proxies = []
+    socks4_proxies = []
+    socks5_proxies = []
 
-    if keyword in html_text:
-        return True
-    return False
+    for line in raw_lines:
+        line = line.strip()
+        if not line:
+            continue
 
+        if line.startswith("http://") or line.startswith("https://"):
+            http_proxies.append(clean_proxy(line))
+        elif line.startswith("socks4://"):
+            socks4_proxies.append(clean_proxy(line))
+        elif line.startswith("socks5://"):
+            socks5_proxies.append(clean_proxy(line))
 
-def risk_level(found):
-    if found:
-        return "❌ HIGH RISK — Trademark with this name likely exists in the US"
-    return "✅ LOW RISK — No obvious trademark found"
+    st.success("✅ Proxies processed successfully")
 
+    col1, col2, col3 = st.columns(3)
 
-# -----------------------------
-# Streamlit UI
-# -----------------------------
-st.set_page_config(
-    page_title="Game Name Trademark Checker",
-    page_icon="🎮",
-    layout="centered"
-)
+    with col1:
+        st.metric("HTTP", len(http_proxies))
+        if http_proxies:
+            st.download_button(
+                "⬇ Download HTTP",
+                "\n".join(http_proxies),
+                file_name="http.txt",
+                mime="text/plain"
+            )
 
-st.title("🎮 Game Name Trademark Checker (US)")
-st.write(
-    "Check whether a **game name or keyword** is already trademarked in the **United States (USPTO)**.\n\n"
-    "**Note:** This is a preliminary screening tool, not legal advice."
-)
+    with col2:
+        st.metric("SOCKS4", len(socks4_proxies))
+        if socks4_proxies:
+            st.download_button(
+                "⬇ Download SOCKS4",
+                "\n".join(socks4_proxies),
+                file_name="socks4.txt",
+                mime="text/plain"
+            )
 
-keyword = st.text_input(
-    "Enter game name / keyword",
-    placeholder="e.g. Cookingdom"
-)
-
-if st.button("Check Trademark"):
-    if not keyword.strip():
-        st.warning("Please enter a keyword")
-    else:
-        with st.spinner("Searching USPTO trademark database..."):
-            try:
-                html = search_trademark(keyword.strip())
-                found = analyze_results(html, keyword.strip())
-                verdict = risk_level(found)
-
-                st.subheader("Result")
-                if "LOW" in verdict:
-                    st.success(verdict)
-                else:
-                    st.error(verdict)
-
-                if found:
-                    st.info(
-                        "A similar trademark name appears in USPTO search results. "
-                        "Manual verification is recommended."
-                    )
-                else:
-                    st.info("No matching trademark name detected.")
-
-            except Exception as e:
-                st.error("USPTO search failed.")
-                st.code(str(e))
-
-st.markdown("---")
-st.caption(
-    "⚠ This tool provides **preliminary trademark screening only**. "
-    "Always verify manually or consult a trademark attorney."
-)
+    with col3:
+        st.metric("SOCKS5", len(socks5_proxies))
+        if socks5_proxies:
+            st.download_button(
+                "⬇ Download SOCKS5",
+                "\n".join(socks5_proxies),
+                file_name="socks5.txt",
+                mime="text/plain"
+            )
